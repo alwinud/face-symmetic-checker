@@ -15,40 +15,30 @@ mp_face_mesh = mp.solutions.face_mesh
 face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True)
 
 def calculate_symmetry(image_path):
-    print(f"Processing image: {image_path}")  # Debug log
     try:
         # Load image
         image = cv2.imread(image_path)
         if image is None:
-            print("Error: Failed to load image.")  # Debug log
             return None, "Failed to load image.", None
 
-        # Resize image to a maximum width of 320 pixels
+        # Resize image to a maximum width of 240 pixels
         height, width = image.shape[:2]
-        if width > 320:
-            scale = 320 / width
-            image = cv2.resize(image, (320, int(height * scale)))
-
-        print(f"Resized image dimensions: {image.shape}")  # Debug log
+        if width > 240:
+            scale = 240 / width
+            image = cv2.resize(image, (240, int(height * scale)))
 
         # Convert the image to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        print("Image converted to RGB.")  # Debug log
 
         # Process the image to detect facial landmarks
         results = face_mesh.process(image_rgb)
         if not results.multi_face_landmarks:
-            print("Error: No face detected.")  # Debug log
             return None, "No face detected.", None
-
-        print("Face detected. Calculating symmetry...")  # Debug log
 
         # Extract landmarks
         landmarks = results.multi_face_landmarks[0].landmark
         h, w, _ = image.shape
         landmarks = np.array([[int(lm.x * w), int(lm.y * h)] for lm in landmarks])
-
-        print(f"Number of landmarks: {len(landmarks)}")  # Debug log
 
         # Split landmarks into left and right
         mid_point = landmarks[1]  # Use the nose tip (landmark 1) as the midpoint
@@ -62,8 +52,6 @@ def calculate_symmetry(image_path):
         differences = np.linalg.norm(left_landmarks - right_landmarks_mirrored, axis=1)
         symmetry_percentage = 100 - (np.mean(differences) / mid_point[0] * 100)
 
-        print(f"Symmetry percentage: {symmetry_percentage}")  # Debug log
-
         # Draw landmarks on the image
         for (x, y) in landmarks:
             cv2.circle(image, (x, y), 2, (0, 255, 0), -1)  # Smaller dots for better visualization
@@ -71,13 +59,11 @@ def calculate_symmetry(image_path):
         # Save the annotated image
         annotated_image_path = os.path.join("uploads", "annotated_" + os.path.basename(image_path))
         cv2.imwrite(annotated_image_path, image)
-        print(f"Annotated image saved at: {annotated_image_path}")  # Debug log
 
         # Release resources
         del image, image_rgb, results
         return symmetry_percentage, annotated_image_path, None
     except Exception as e:
-        print(f"Error in calculate_symmetry: {e}")  # Debug log
         return None, str(e), None
 
 @app.route("/", methods=["GET", "POST"])
@@ -103,7 +89,6 @@ def upload_image():
                 future = executor.submit(calculate_symmetry, file_path)
                 symmetry_percentage, annotated_image_path, error = future.result(timeout=30)  # Timeout after 30 seconds
         except concurrent.futures.TimeoutError:
-            print("Error: Image processing timed out.")  # Debug log
             return jsonify({"error": "Image processing timed out."})
 
         if error:
