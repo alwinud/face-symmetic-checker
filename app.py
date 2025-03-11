@@ -23,11 +23,11 @@ def calculate_symmetry(image_path):
             print("Error: Failed to load image.")  # Debug log
             return None, "Failed to load image.", None
 
-        # Resize image to a maximum width of 640 pixels
+        # Resize image to a maximum width of 320 pixels
         height, width = image.shape[:2]
-        if width > 640:
-            scale = 640 / width
-            image = cv2.resize(image, (640, int(height * scale)))
+        if width > 320:
+            scale = 320 / width
+            image = cv2.resize(image, (320, int(height * scale)))
 
         print(f"Resized image dimensions: {image.shape}")  # Debug log
 
@@ -73,6 +73,8 @@ def calculate_symmetry(image_path):
         cv2.imwrite(annotated_image_path, image)
         print(f"Annotated image saved at: {annotated_image_path}")  # Debug log
 
+        # Release resources
+        del image, image_rgb, results
         return symmetry_percentage, annotated_image_path, None
     except Exception as e:
         print(f"Error in calculate_symmetry: {e}")  # Debug log
@@ -99,7 +101,7 @@ def upload_image():
         try:
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(calculate_symmetry, file_path)
-                symmetry_percentage, annotated_image_path, error = future.result(timeout=10)  # Timeout after 10 seconds
+                symmetry_percentage, annotated_image_path, error = future.result(timeout=30)  # Timeout after 30 seconds
         except concurrent.futures.TimeoutError:
             print("Error: Image processing timed out.")  # Debug log
             return jsonify({"error": "Image processing timed out."})
