@@ -3,6 +3,7 @@ from flask import Flask, request, render_template, jsonify, send_from_directory
 import cv2
 import mediapipe as mp
 import numpy as np
+import concurrent.futures
 
 app = Flask(__name__)
 
@@ -22,9 +23,17 @@ def calculate_symmetry(image_path):
             print("Error: Failed to load image.")  # Debug log
             return None, "Failed to load image.", None
 
+        # Resize image to a maximum width of 640 pixels
+        height, width = image.shape[:2]
+        if width > 640:
+            scale = 640 / width
+            image = cv2.resize(image, (640, int(height * scale)))
+
+        print(f"Resized image dimensions: {image.shape}")  # Debug log
+
         # Convert the image to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        print("Image loaded and converted to RGB.")  # Debug log
+        print("Image converted to RGB.")  # Debug log
 
         # Process the image to detect facial landmarks
         results = face_mesh.process(image_rgb)
@@ -33,10 +42,13 @@ def calculate_symmetry(image_path):
             return None, "No face detected.", None
 
         print("Face detected. Calculating symmetry...")  # Debug log
+
         # Extract landmarks
         landmarks = results.multi_face_landmarks[0].landmark
         h, w, _ = image.shape
         landmarks = np.array([[int(lm.x * w), int(lm.y * h)] for lm in landmarks])
+
+        print(f"Number of landmarks: {len(landmarks)}")  # Debug log
 
         # Split landmarks into left and right
         mid_point = landmarks[1]  # Use the nose tip (landmark 1) as the midpoint
@@ -49,6 +61,8 @@ def calculate_symmetry(image_path):
         # Calculate symmetry percentage
         differences = np.linalg.norm(left_landmarks - right_landmarks_mirrored, axis=1)
         symmetry_percentage = 100 - (np.mean(differences) / mid_point[0] * 100)
+
+        print(f"Symmetry percentage: {symmetry_percentage}")  # Debug log
 
         # Draw landmarks on the image
         for (x, y) in landmarks:
@@ -81,8 +95,15 @@ def upload_image():
         file_path = os.path.join("uploads", file.filename)
         file.save(file_path)
 
-        # Calculate symmetry and annotate image
-        symmetry_percentage, annotated_image_path, error = calculate_symmetry(file_path)
+        # Calculate symmetry and annotate image with a timeout
+        try:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(calculate_symmetry, file_path)
+                symmetry_percentage, annotated_image_path, error = future.result(timeout=10)  # Timeout after 10 seconds
+        except concurrent.futures.TimeoutError:
+            print("Error: Image processing timed out.")  # Debug log
+            return jsonify({"error": "Image processing timed out."})
+
         if error:
             return jsonify({"error": error})
 
