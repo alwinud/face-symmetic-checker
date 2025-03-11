@@ -1,33 +1,38 @@
 from flask import Flask, request, render_template, jsonify, send_from_directory
 import cv2
-import dlib
+import mediapipe as mp
 import numpy as np
 import os
 
 app = Flask(__name__)
 
-# Load pre-trained facial landmark detector
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+# Initialize MediaPipe Face Mesh
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True)
 
 def calculate_symmetry(image_path):
     # Load image
     image = cv2.imread(image_path)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if image is None:
+        return None, "Failed to load image.", None
 
-    # Detect faces
-    faces = detector(gray)
-    if len(faces) == 0:
+    # Convert the image to RGB
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    # Process the image to detect facial landmarks
+    results = face_mesh.process(image_rgb)
+    if not results.multi_face_landmarks:
         return None, "No face detected.", None
 
-    # Get facial landmarks
-    landmarks = predictor(gray, faces[0])
-    landmarks = np.array([[p.x, p.y] for p in landmarks.parts()])
+    # Extract landmarks
+    landmarks = results.multi_face_landmarks[0].landmark
+    h, w, _ = image.shape
+    landmarks = np.array([[int(lm.x * w), int(lm.y * h)] for lm in landmarks])
 
     # Split landmarks into left and right
-    mid_point = landmarks[27]  # Tip of the nose (landmark 27)
-    left_landmarks = landmarks[:27]
-    right_landmarks = landmarks[27:54]
+    mid_point = landmarks[1]  # Use the nose tip (landmark 1) as the midpoint
+    left_landmarks = landmarks[:234]  # Left half of the face
+    right_landmarks = landmarks[234:468]  # Right half of the face
 
     # Mirror right landmarks for comparison
     right_landmarks_mirrored = np.array([[mid_point[0] + (mid_point[0] - x), y] for x, y in right_landmarks])
@@ -36,14 +41,14 @@ def calculate_symmetry(image_path):
     differences = np.linalg.norm(left_landmarks - right_landmarks_mirrored, axis=1)
     symmetry_percentage = 100 - (np.mean(differences) / mid_point[0] * 100)
 
-    # Draw landmarks on the image with larger dots
+    # Draw landmarks on the image
     for (x, y) in landmarks:
-        cv2.circle(image, (x, y), 5, (0, 255, 0), -1)  # Larger dots (radius = 5, filled)
+        cv2.circle(image, (x, y), 2, (0, 255, 0), -1)  # Smaller dots for better visualization
 
     # Save the annotated image
     annotated_image_path = os.path.join("uploads", "annotated_" + os.path.basename(image_path))
     cv2.imwrite(annotated_image_path, image)
-    print(f"Annotated image saved at: {annotated_image_path}")  # Debug print
+    print(f"Annotated image saved at: {annotated_image_path}")
 
     return symmetry_percentage, annotated_image_path, None
 
