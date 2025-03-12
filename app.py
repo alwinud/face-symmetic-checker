@@ -66,7 +66,7 @@ def calculate_symmetry(image_path):
             cv2.circle(image, (x, y), 2, (0, 255, 0), -1)  # Green dots for visualization
 
         # Save the annotated image
-        annotated_image_path = os.path.join("uploads", "annotated_" + os.path.basename(image_path))
+        annotated_image_path = os.path.join("/tmp", "annotated_" + os.path.basename(image_path))
         cv2.imwrite(annotated_image_path, image)
 
         return symmetry_percentage, annotated_image_path, None
