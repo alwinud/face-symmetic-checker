@@ -11,10 +11,6 @@ app = Flask(__name__)
 # Ensure the uploads directory exists
 os.makedirs("uploads", exist_ok=True)
 
-# Initialize MediaPipe Face Mesh
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True)
-
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
 
 def allowed_file(filename):
@@ -22,55 +18,53 @@ def allowed_file(filename):
 
 def calculate_symmetry(image_path):
     try:
-        # Load image
+        print(f"Processing image: {image_path}")
         image = cv2.imread(image_path)
         if image is None:
+            print("Error: Failed to load image.")
             return None, "Failed to load image.", None
 
-        # Resize image to a maximum width of 240 pixels
         height, width = image.shape[:2]
-        if width > 240:
-            scale = 240 / width
-            image = cv2.resize(image, (240, int(height * scale)))
+        print(f"Original image size: {width}x{height}")
+        if width > 120:
+            scale = 120 / width
+            image = cv2.resize(image, (120, int(height * scale)))
+            print(f"Resized image to: {image.shape[1]}x{image.shape[0]}")
+        else:
+            print("Image does not need resizing")
 
-        # Convert the image to RGB
+        mp_face_mesh = mp.solutions.face_mesh
+        face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1, refine_landmarks=True)
+
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        # Process the image to detect facial landmarks
         results = face_mesh.process(image_rgb)
         if not results.multi_face_landmarks:
+            print("Error: No face detected.")
             return None, "No face detected.", None
 
-        # Extract landmarks
         landmarks = results.multi_face_landmarks[0].landmark
         h, w, _ = image.shape
         landmarks = np.array([[int(lm.x * w), int(lm.y * h)] for lm in landmarks])
 
-        # Find midline points
-        nose_tip = landmarks[1]  # Nose tip landmark
+        nose_tip = landmarks[1]
         mid_x = nose_tip[0]
 
-        # Split left and right landmarks
         left_landmarks = landmarks[:234]
         right_landmarks = landmarks[234:468]
 
-        # Mirror right landmarks for comparison
         right_landmarks_mirrored = np.array([[mid_x - (x - mid_x), y] for x, y in right_landmarks])
 
-        # Calculate symmetry percentage
         differences = np.linalg.norm(left_landmarks - right_landmarks_mirrored, axis=1)
         symmetry_percentage = 100 - (np.mean(differences) / mid_x * 100)
+        print(f"Symmetry percentage: {symmetry_percentage}")
 
-        # Draw landmarks on the image
-        for (x, y) in landmarks:
-            cv2.circle(image, (x, y), 2, (0, 255, 0), -1)  # Green dots for visualization
-
-        # Save the annotated image
         annotated_image_path = os.path.join("/tmp", "annotated_" + os.path.basename(image_path))
         cv2.imwrite(annotated_image_path, image)
+        print(f"Annotated image saved to: {annotated_image_path}")
 
         return symmetry_percentage, annotated_image_path, None
     except Exception as e:
+        print(f"Error during processing: {e}")
         return None, str(e), None
 
 @app.route("/", methods=["GET", "POST"])
@@ -83,12 +77,10 @@ def upload_image():
         if file.filename == "" or not allowed_file(file.filename):
             return jsonify({"error": "Invalid file format. Please upload a PNG, JPG, or JPEG image."})
 
-        # Ensure unique filename
         filename = str(uuid.uuid4()) + "_" + file.filename
         file_path = os.path.join("uploads", filename)
         file.save(file_path)
 
-        # Calculate symmetry with timeout
         try:
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(calculate_symmetry, file_path)
